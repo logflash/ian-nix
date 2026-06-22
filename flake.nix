@@ -19,7 +19,7 @@
   };
 
   outputs =
-    inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-homebrew }:
+    inputs@{ nix-darwin, ... }:
     let
       # Machine-specific settings - edit for the target host.
       username = "ian";
@@ -27,28 +27,11 @@
       system   = "aarch64-darwin";         # Apple Silicon; "x86_64-darwin" on Intel
     in
     {
+      # Apply with: darwin-rebuild switch --flake .#${hostname}
       darwinConfigurations.${hostname} = nix-darwin.lib.darwinSystem {
         inherit system;
         specialArgs = { inherit inputs username hostname; };
-
-        modules = [
-          ./modules/darwin.nix
-
-          # Manage (and pin) Homebrew itself, declaratively.
-          nix-homebrew.darwinModules.nix-homebrew
-
-          # Run home-manager as part of the system rebuild.
-          home-manager.darwinModules.home-manager
-          {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            # Back up any pre-existing dotfile (e.g. ~/.zshrc) to <name>.backup on
-            # the first switch instead of failing on the collision.
-            home-manager.backupFileExtension = "backup";
-            home-manager.users.${username} = import ./modules/home.nix;
-            home-manager.extraSpecialArgs = { inherit inputs username; };
-          }
-        ];
+        modules = [ ./darwin ];
       };
     };
 }

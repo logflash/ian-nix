@@ -11,26 +11,26 @@ with [nix-darwin](https://github.com/nix-darwin/nix-darwin),
 
 | Path                  | Purpose                                                            |
 | --------------------- | ----------------------------------------------------------------- |
-| `ensure-nix.sh`       | Idempotent bootstrap: install Nix and enable flakes.              |
+| `ensure-nix.sh`       | Idempotent bootstrap: install Nix, enable flakes, set git identity. |
 | `configure-darwin.sh` | Apply the flake (`darwin-rebuild switch`); also `build` / `check`. |
-| `flake.nix`           | Entry point: wires nix-darwin, home-manager, and Homebrew together. |
-| `modules/darwin.nix`  | System-level config (macOS defaults, Nix settings, Homebrew).     |
-| `modules/home.nix`    | User-level config (CLI tools, dotfiles) via home-manager.         |
+| `flake.nix`           | Entry point: builds `darwinConfigurations.<hostname>` from `./darwin`. |
+| `darwin/`             | System (nix-darwin) modules — `default.nix`, `homebrew.nix`.       |
+| `home/`               | User (home-manager) modules — `default.nix`, `packages.nix`, `shell.nix`, `git.nix`, `vscode.nix`. |
 
 ## What's managed
 
 | Area | What | Where |
 | ---- | ---- | ----- |
-| **Nix** | flakes + `nix-command` enabled | `modules/darwin.nix` |
-| **CLI tools** (nixpkgs, pinned) | `ripgrep`, `fd`, `jq`, `awscli2`, `cloudflared`, `stripe-cli`, `temporal-cli`, `nodejs_22`, `pnpm` | `modules/home.nix` |
-| **Homebrew brews** | `colima`, `docker`, `docker-compose` (container tooling) | `modules/darwin.nix` |
-| **Homebrew casks** | `claude-code`, `codex`, `ngrok`, `visual-studio-code` | `modules/darwin.nix` |
-| **Shell** | zsh (`.zshrc` / `.zprofile`), `starship` prompt, `atuin`, `gh` | `modules/home.nix` |
-| **Git** | global identity + `push.default` | `modules/home.nix` |
-| **VSCode** | `settings.json` (declarative, read-only); 9 baseline extensions seeded but UI-editable | `modules/home.nix` |
+| **Nix** | flakes + `nix-command` enabled | `darwin/default.nix` |
+| **CLI tools** (nixpkgs, pinned) | `ripgrep`, `fd`, `jq`, `btop`, `dust`, `tldr`, `awscli2`, `cloudflared`, `stripe-cli`, `temporal-cli`, `uv`, `nodejs_24`, `pnpm_10`, `python3` | `home/packages.nix` |
+| **Homebrew brews** | `colima`, `docker`, `docker-compose` (container tooling) | `darwin/homebrew.nix` |
+| **Homebrew casks** | `claude-code`, `codex`, `linearmouse`, `ngrok`, `slack`, `visual-studio-code` | `darwin/homebrew.nix` |
+| **Shell** | zsh, `starship`, `atuin`, `zoxide`, `fzf`, `eza`, `bat`, `direnv`, `lazygit`, `gh` | `home/shell.nix` |
+| **Git** | `push.default`, `merge.conflictstyle`, delta pager (identity set by `ensure-nix.sh`) | `home/git.nix` |
+| **VSCode** | `settings.json` (read-only); baseline extensions seeded but UI-editable | `home/vscode.nix` |
 
-Node comes from `nodejs_22` (nixpkgs), replacing `node` and `nvm`. Per-project
-flake dev shells can provide other versions.
+Node comes from `nodejs_24` (nixpkgs), pinned by the flake. Per-project flake
+dev shells can provide other versions.
 
 ## Quick start
 
@@ -54,10 +54,10 @@ then runs `darwin-rebuild switch` against `darwinConfigurations.<LocalHostName>`
 Override the target with `FLAKE_HOST=…`.
 
 After the first switch, `experimental-features` is owned declaratively by
-`modules/darwin.nix`, making the `nix.conf` line written by `ensure-nix.sh`
-redundant (harmless to leave). Editing `modules/darwin.nix` or `modules/home.nix`
-and re-running `./configure-darwin.sh` converges the machine to match, on this
-Mac or any other.
+`darwin/default.nix`, making the `nix.conf` line written by `ensure-nix.sh`
+redundant (harmless to leave). Editing files under `darwin/` or `home/` and
+re-running `./configure-darwin.sh` converges the machine to match, on this Mac or
+any other.
 
 > [!NOTE]
 > The script auto-stages with `git add` (it never commits). When running commands
