@@ -30,13 +30,6 @@
 
   programs.zsh.enable = true;             # enable the system zsh integration for Nix
 
-  ## macOS defaults ###########################################################
-  system.defaults = {
-    dock.autohide = true;
-    finder.AppleShowAllExtensions = true;
-    NSGlobalDomain.AppleShowAllExtensions = true;
-  };
-
   ## Homebrew #################################################################
   # nix-homebrew installs and pins Homebrew under Nix's control.
   nix-homebrew = {
@@ -52,7 +45,11 @@
     onActivation = {
       autoUpdate = true;
       upgrade = true;
-      cleanup = "zap";                    # uninstall anything not declared below
+      # "none": brew bundle installs what's listed but NEVER uninstalls anything
+      # else. "zap" once removed claude-code@latest (the declared token didn't
+      # match the installed one), which deleted the `claude` binary. Never again.
+      # To prune undeclared packages deliberately, run `brew bundle cleanup`.
+      cleanup = "none";
     };
     taps  = [ ];
     brews = [
@@ -63,7 +60,7 @@
       "docker-compose"
     ];
     casks = [
-      "claude-code"   # plain token tracks the stable cask
+      "claude-code@latest"   # must match the installed cask token exactly, or zap removes it
       "codex"
       "linearmouse"
       "ngrok"

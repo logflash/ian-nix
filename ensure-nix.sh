@@ -97,6 +97,28 @@ install_nix() {
   load_nix_env
 }
 
+# Prompt for git author identity and store it via `git config --global` (writes
+# ~/.gitconfig), keeping personal info out of this repo. Idempotent: skips if
+# already set, and only prompts on an interactive terminal.
+configure_git_identity() {
+  command -v git >/dev/null 2>&1 || return 0
+  if [ -n "$(git config --global user.name 2>/dev/null)" ] \
+    && [ -n "$(git config --global user.email 2>/dev/null)" ]; then
+    log "Git identity already set ($(git config --global user.name) <$(git config --global user.email)>)."
+    return 0
+  fi
+  if [ ! -t 0 ]; then
+    warn "Git identity not set; set it later with: git config --global user.name / user.email"
+    return 0
+  fi
+  local name email
+  printf 'Git author name:  '; IFS= read -r name
+  printf 'Git author email: '; IFS= read -r email
+  [ -n "${name}" ]  && git config --global user.name  "${name}"
+  [ -n "${email}" ] && git config --global user.email "${email}"
+  log "Git identity configured."
+}
+
 main() {
   # macOS only.
   if [ "$(uname -s)" != "Darwin" ]; then
@@ -132,6 +154,8 @@ fail. Repair the install first, then run ./ensure-nix.sh again:
   if [ "${ENABLE_FLAKES}" != "0" ]; then
     enable_flakes
   fi
+
+  configure_git_identity
 }
 
 main "$@"

@@ -12,18 +12,63 @@
     ripgrep
     fd
     jq
+    btop
+    dust
+    tldr
     awscli2
     cloudflared
     stripe-cli
     temporal-cli
-    nodejs_22
-    pnpm
     uv
+
+    # Project toolchain
+    nodejs_24        # engines.node ^24.13.1 (nixpkgs provides 24.15.0)
+    pnpm_10          # packageManager pnpm@10.x (nixpkgs provides 10.34.0)
+    python3          # node-gyp for native modules (node-pty, sharp, ...)
+    # bun            # optional: sync:repos + alternate server runtime
   ];
 
   # Programs with home-manager modules that also manage their configuration.
-  programs.atuin.enable = true;
+  programs.atuin = {
+    enable = true;
+    settings = {
+      # Default filter mode on search startup.
+      filter_mode = "directory";
+
+      # Ctrl+/ cycles the filter mode (global -> host -> session -> directory)
+      # in every keymap mode. Ctrl+R also cycles.
+      keymap =
+        let
+          cycle = {
+            "ctrl-/" = "cycle-filter-mode";
+          };
+        in
+        {
+          emacs = cycle;
+          vim_insert = cycle;
+          vim_normal = cycle;
+        };
+    };
+  };
   programs.gh.enable = true;
+
+  # Modern CLI tools with home-manager modules (install + zsh integration).
+  programs.zoxide.enable = true;        # smarter cd
+  programs.eza.enable = true;           # modern ls (aliased below)
+  programs.bat.enable = true;           # modern cat
+  programs.lazygit.enable = true;       # git TUI
+
+  # fzf fuzzy finder. Its zsh integration also binds Ctrl+R, which atuin uses;
+  # if fzf ends up grabbing it, disable fzf's keybinding. Ctrl+T / Alt+C are
+  # unaffected.
+  programs.fzf.enable = true;
+
+  # direnv + nix-direnv: per-project environments (e.g. a flake dev shell for a
+  # different Node version) load automatically on cd.
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true;
+  };
 
   # Starship prompt. home-manager generates starship.toml and wires the zsh
   # integration.
@@ -41,16 +86,22 @@
     };
   };
 
-  # Global git configuration.
+  # Global git configuration. Identity (user.name/email) is set separately via
+  # `git config --global` (by ensure-nix.sh) so it stays out of this repo; git
+  # merges it with the settings below.
   programs.git = {
     enable = true;
     settings = {
-      user = {
-        name = "Ian Henriques";
-        email = "ian@generaltranslation.com";
-      };
       push.default = "current";
+      merge.conflictstyle = "zdiff3";
     };
+  };
+
+  # delta: git pager + diff highlighting (top-level module in current home-manager).
+  programs.delta = {
+    enable = true;
+    enableGitIntegration = true;
+    options.navigate = true;
   };
 
   # zsh. home-manager generates ~/.zshrc and ~/.zprofile. Starship and atuin
@@ -60,6 +111,14 @@
     enableCompletion = true;
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
+
+    shellAliases = {
+      ls = "eza --git";
+      ll = "eza -lah --git";
+      tree = "eza --tree";
+      grep = "rg";
+      find = "fd";
+    };
 
     # Custom .zshrc additions.
     initContent = ''

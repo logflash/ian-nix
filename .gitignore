@@ -1,3 +1,6 @@
 # nix build output symlinks
 result
 result-*
+
+# macOS metadata
+.DS_Store

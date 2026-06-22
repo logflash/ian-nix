@@ -62,6 +62,27 @@ stage_flake_files() {
   git -C "${FLAKE_DIR}" add -A
 }
 
+# nix-darwin aborts the first activation if /etc/bashrc or /etc/zshrc already
+# exist with content it did not create (the Nix installer adds a daemon-sourcing
+# block). Rename such files to *.before-nix-darwin so activation can take them
+# over. Idempotent: skips files nix-darwin already manages (symlinks) and never
+# clobbers an existing backup. Uses sudo when not already running as root.
+backup_conflicting_etc_files() {
+  local f backup
+  for f in /etc/bashrc /etc/zshrc; do
+    [ -L "$f" ] && continue          # already a nix-darwin symlink
+    [ -f "$f" ] || continue          # nothing to back up
+    backup="$f.before-nix-darwin"
+    [ -e "$backup" ] && continue     # keep an existing backup intact
+    log "Backing up $f -> $backup so nix-darwin can manage it."
+    if [ "$(id -u)" -eq 0 ]; then
+      mv "$f" "$backup"
+    else
+      sudo mv "$f" "$backup"
+    fi
+  done
+}
+
 main() {
   [ "$(uname -s)" = "Darwin" ] || die "this script only supports macOS (detected: $(uname -s))"
   [ -f "${FLAKE_DIR}/flake.nix" ] || die "no flake.nix found in ${FLAKE_DIR}"
@@ -85,9 +106,9 @@ main() {
       ;;
     switch)
       warn "Activation needs administrator rights and may prompt for a password."
-      # Recent nix-darwin elevates privileges itself, so this runs without sudo,
-      # which also avoids git 'dubious ownership' errors on the repository. If a
-      # version requires root, re-run prefixed with sudo.
+      # Clear pre-existing /etc/bashrc and /etc/zshrc that would otherwise abort
+      # the first activation.
+      backup_conflicting_etc_files
       if command -v darwin-rebuild >/dev/null 2>&1; then
         log "Applying: darwin-rebuild switch --flake ${target}"
         darwin-rebuild switch --flake "${target}"
