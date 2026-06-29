@@ -70,6 +70,23 @@
     # Custom .zshrc additions.
     initContent = ''
       zle_highlight=(default:fg=yellow)
+
+      # nvm: node is managed by nvm (per-project via .nvmrc), NOT nixpkgs — the
+      # nixpkgs node build crashes Next 16's TypeScript worker. See packages.nix.
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+
+      # Auto-switch to the project's pinned node on cd when an .nvmrc is found
+      # (walks up the tree, so it works from any subdir of the repo).
+      autoload -U add-zsh-hook
+      load-nvmrc() {
+        if [ -n "$(nvm_find_nvmrc)" ]; then
+          nvm use --silent
+        fi
+      }
+      add-zsh-hook chpwd load-nvmrc
+      load-nvmrc
     '';
 
     # Put Homebrew binaries on PATH for interactive shells.
