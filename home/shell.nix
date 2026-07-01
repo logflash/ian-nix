@@ -74,15 +74,22 @@
       # nvm: node is managed by nvm (per-project via .nvmrc), NOT nixpkgs — the
       # nixpkgs node build crashes Next 16's TypeScript worker. See packages.nix.
       export NVM_DIR="$HOME/.nvm"
-      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-      [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+      [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-      # Auto-switch to the project's pinned node on cd when an .nvmrc is found
-      # (walks up the tree, so it works from any subdir of the repo).
+      # Auto-select the project's pinned node from .nvmrc on cd (walks up the
+      # tree): install it if missing, switch to it, and revert to the default
+      # when leaving an .nvmrc directory. (nvm's standard chpwd hook.)
       autoload -U add-zsh-hook
       load-nvmrc() {
-        if [ -n "$(nvm_find_nvmrc)" ]; then
-          nvm use --silent
+        local nvmrc_path; nvmrc_path="$(nvm_find_nvmrc)"
+        if [ -n "$nvmrc_path" ]; then
+          local v; v=$(nvm version "$(cat "''${nvmrc_path}")")
+          if [ "$v" = "N/A" ]; then nvm install
+          elif [ "$v" != "$(nvm version)" ]; then nvm use
+          fi
+        elif [ -n "$(PWD=$OLDPWD nvm_find_nvmrc)" ] && [ "$(nvm version)" != "$(nvm version default)" ]; then
+          nvm use default
         fi
       }
       add-zsh-hook chpwd load-nvmrc
