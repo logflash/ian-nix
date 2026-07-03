@@ -44,6 +44,7 @@
       python.disabled = true;
       git_status.disabled = true;
       nodejs.disabled = true;
+      battery.disabled = true;
       character = {
         success_symbol = "[❯](bold green)";
         error_symbol = "[❯](bold green)";

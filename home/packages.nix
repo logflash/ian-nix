@@ -13,6 +13,8 @@
     stripe-cli
     temporal-cli
     uv
+    mkcert          # locally-trusted dev certs; run `mkcert -install` once manually
+    openscreen      # screen recorder (open-source Screen Studio alternative)
 
     # Project toolchain
     # node is intentionally NOT from nixpkgs: the nixpkgs node build (both
