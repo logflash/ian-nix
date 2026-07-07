@@ -10,6 +10,7 @@
     tldr
     awscli2
     cloudflared
+    caddy
     stripe-cli
     temporal-cli
     uv
