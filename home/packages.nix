@@ -10,6 +10,7 @@
     tldr
     awscli2
     cloudflared
+    ngrok
     caddy
     stripe-cli
     temporal-cli

@@ -1,5 +1,5 @@
 # System configuration (nix-darwin), applied by `darwin-rebuild switch`.
-{ pkgs, inputs, username, hostname, ... }:
+{ pkgs, lib, inputs, username, ... }:
 {
   imports = [
     ./homebrew.nix
@@ -15,13 +15,11 @@
     home = "/Users/${username}";
   };
 
-  networking.hostName = hostname;
-  networking.computerName = hostname;
-
   ## Nix ######################################################################
   # Declarative replacement for the nix.conf edit made by ensure-nix.sh. After
   # the first switch this is the source of truth for these settings.
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "ngrok";
 
   # With the Determinate Systems installer, Determinate manages the daemon; set
   # nix.enable = false here to avoid a conflict. The default (official) installer
@@ -34,6 +32,11 @@
   ];
 
   programs.zsh.enable = true;             # enable the system zsh integration for Nix
+
+  ## Mouse ####################################################################
+  system.defaults.NSGlobalDomain."com.apple.swipescrolldirection" = false;
+  # macOS Sonoma and later: System Settings > Mouse > Advanced > Pointer acceleration.
+  system.defaults.CustomUserPreferences.NSGlobalDomain."com.apple.mouse.linear" = true;
 
   ## home-manager #############################################################
   home-manager = {

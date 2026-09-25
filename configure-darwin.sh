@@ -11,11 +11,12 @@
 #   ./configure-darwin.sh check     # nix flake check: validate the flake evaluates
 #
 # On the first run (before darwin-rebuild exists) switch bootstraps via
-# `nix run nix-darwin`.
+# `nix run nix-darwin`. Run this wrapper as your regular user; it uses sudo
+# for system activation.
 #
 # Environment overrides:
 #   FLAKE_DIR    Directory containing flake.nix (default: this script's directory)
-#   FLAKE_HOST   darwinConfigurations name to build (default: `scutil --get LocalHostName`)
+#   FLAKE_CONFIG darwinConfigurations name to build (default: Apple Silicon or Intel shared profile)
 #   NO_GIT_ADD   Set to 1 to skip auto-staging files for the flake.
 #
 set -euo pipefail
@@ -26,7 +27,13 @@ export NIX_CONFIG="extra-experimental-features = nix-command flakes"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 FLAKE_DIR="${FLAKE_DIR:-$SCRIPT_DIR}"
-FLAKE_HOST="${FLAKE_HOST:-$(scutil --get LocalHostName 2>/dev/null || hostname -s)}"
+if [ -z "${FLAKE_CONFIG:-}" ]; then
+  case "$(uname -m)" in
+    arm64) FLAKE_CONFIG=default ;;
+    x86_64) FLAKE_CONFIG=intel ;;
+    *) FLAKE_CONFIG=default ;;
+  esac
+fi
 NO_GIT_ADD="${NO_GIT_ADD:-0}"
 ACTION="${1:-switch}"
 
@@ -62,23 +69,39 @@ stage_flake_files() {
   git -C "${FLAKE_DIR}" add -A
 }
 
-# nix-darwin aborts the first activation if /etc/bashrc or /etc/zshrc already
-# exist with content it did not create (the Nix installer adds a daemon-sourcing
-# block). Rename such files to *.before-nix-darwin so activation can take them
-# over. Idempotent: skips files nix-darwin already manages (symlinks) and never
-# clobbers an existing backup. Uses sudo when not already running as root.
+# nix-darwin aborts the first activation if installer-owned files already
+# exist in /etc. Move them only after the system builds, and restore them if
+# activation fails before nix-darwin replaces them.
+backed_up_etc_files=()
+etc_backup_paths=()
 backup_conflicting_etc_files() {
-  local f backup
-  for f in /etc/bashrc /etc/zshrc; do
+  local f backup n
+  for f in /etc/nix/nix.conf /etc/bashrc /etc/zshrc; do
     [ -L "$f" ] && continue          # already a nix-darwin symlink
     [ -f "$f" ] || continue          # nothing to back up
     backup="$f.before-nix-darwin"
-    [ -e "$backup" ] && continue     # keep an existing backup intact
+    n=1
+    while [ -e "$backup" ] || [ -L "$backup" ]; do
+      backup="$f.before-nix-darwin.$n"
+      n=$((n + 1))
+    done
     log "Backing up $f -> $backup so nix-darwin can manage it."
-    if [ "$(id -u)" -eq 0 ]; then
-      mv "$f" "$backup"
+    sudo mv "$f" "$backup"
+    backed_up_etc_files+=("$f")
+    etc_backup_paths+=("$backup")
+  done
+}
+
+restore_conflicting_etc_files() {
+  local i f backup
+  for ((i=${#backed_up_etc_files[@]}-1; i>=0; i--)); do
+    f="${backed_up_etc_files[$i]}"
+    backup="${etc_backup_paths[$i]}"
+    if [ ! -e "$f" ] && [ ! -L "$f" ]; then
+      warn "Restoring $f after failed activation."
+      sudo mv "$backup" "$f" || warn "Could not restore $f; saved copy is $backup"
     else
-      sudo mv "$f" "$backup"
+      warn "$f now exists; saved copy is $backup"
     fi
   done
 }
@@ -86,36 +109,46 @@ backup_conflicting_etc_files() {
 main() {
   [ "$(uname -s)" = "Darwin" ] || die "this script only supports macOS (detected: $(uname -s))"
   [ -f "${FLAKE_DIR}/flake.nix" ] || die "no flake.nix found in ${FLAKE_DIR}"
+  [ "$(id -u)" -ne 0 ] || die "run this script as your regular user: ./configure-darwin.sh ${ACTION} (it uses sudo for activation)"
+  FLAKE_DIR="$(cd -- "$FLAKE_DIR" && pwd)"
 
   load_nix_env
   nix_works || die "Nix is not available; run ./ensure-nix.sh first, then re-run this."
 
   stage_flake_files
 
-  local target="${FLAKE_DIR}#${FLAKE_HOST}"
+  # Use one immutable source for both the user build and root activation.
+  # This also lets activation read the flake without access to Downloads.
+  local flake_source target system_attr
+  flake_source="$(FLAKE_DIR="$FLAKE_DIR" nix eval --impure --raw --expr '(builtins.getFlake (builtins.getEnv "FLAKE_DIR")).outPath')"
+  target="path:${flake_source}#${FLAKE_CONFIG}"
+  system_attr="path:${flake_source}#darwinConfigurations.${FLAKE_CONFIG}.system"
 
   case "${ACTION}" in
     check)
       log "Validating flake: ${FLAKE_DIR}"
-      nix flake check "${FLAKE_DIR}"
+      nix flake check "path:${flake_source}"
       ;;
     build)
-      log "Building (no activation): darwinConfigurations.${FLAKE_HOST}.system"
-      nix build --no-link "${FLAKE_DIR}#darwinConfigurations.${FLAKE_HOST}.system"
+      log "Building (no activation): darwinConfigurations.${FLAKE_CONFIG}.system"
+      nix build --no-link "$system_attr"
       log "Build OK - nothing was activated."
       ;;
     switch)
+      log "Building: darwinConfigurations.${FLAKE_CONFIG}.system"
+      nix build --no-link "$system_attr"
       warn "Activation needs administrator rights and may prompt for a password."
-      # Clear pre-existing /etc/bashrc and /etc/zshrc that would otherwise abort
-      # the first activation.
+      sudo -v
+      trap restore_conflicting_etc_files EXIT
       backup_conflicting_etc_files
       if command -v darwin-rebuild >/dev/null 2>&1; then
         log "Applying: darwin-rebuild switch --flake ${target}"
-        darwin-rebuild switch --flake "${target}"
+        sudo -H env NIX_CONFIG="$NIX_CONFIG" "$(command -v darwin-rebuild)" switch --flake "$target"
       else
         log "First run - darwin-rebuild not installed yet; bootstrapping via 'nix run nix-darwin'..."
-        nix run nix-darwin -- switch --flake "${target}"
+        sudo -H env NIX_CONFIG="$NIX_CONFIG" "$(command -v nix)" run nix-darwin/master#darwin-rebuild -- switch --flake "$target"
       fi
+      trap - EXIT
       log "Done. Open a new shell (or run 'exec zsh') to pick up the new environment."
       ;;
     *)

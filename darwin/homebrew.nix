@@ -25,7 +25,6 @@
       "claude-code@latest"   # must match the installed cask token exactly, or zap removes it
       "codex"
       "linearmouse"
-      "ngrok"
       "slack"
       "visual-studio-code"
     ];

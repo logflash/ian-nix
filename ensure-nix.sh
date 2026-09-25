@@ -124,6 +124,7 @@ main() {
   if [ "$(uname -s)" != "Darwin" ]; then
     die "this script only supports macOS (detected: $(uname -s))"
   fi
+  [ "$(id -u)" -ne 0 ] || die "run this script as your regular user: ./ensure-nix.sh (the installer requests sudo when needed)"
 
   log "Detected macOS on $(uname -m)."
 

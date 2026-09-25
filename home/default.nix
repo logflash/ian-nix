@@ -5,6 +5,7 @@
     ./packages.nix
     ./shell.nix
     ./git.nix
+    ./mouse.nix
     ./vscode.nix
   ];
 

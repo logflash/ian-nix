@@ -40,6 +40,15 @@
   programs.starship = {
     enable = true;
     settings = {
+      username = {
+        show_always = true;
+        format = "[$user]($style)";
+      };
+      hostname = {
+        ssh_only = false;
+        format = "[@$hostname]($style) ";
+        style = "bold bright-green";
+      };
       package.disabled = true;
       python.disabled = true;
       git_status.disabled = true;
@@ -75,31 +84,52 @@
       # nvm: node is managed by nvm (per-project via .nvmrc), NOT nixpkgs — the
       # nixpkgs node build crashes Next 16's TypeScript worker. See packages.nix.
       export NVM_DIR="$HOME/.nvm"
-      [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-      [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+      if [ -s "$NVM_DIR/nvm.sh" ]; then
+        \. "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-      # Auto-select the project's pinned node from .nvmrc on cd (walks up the
-      # tree): install it if missing, switch to it, and revert to the default
-      # when leaving an .nvmrc directory. (nvm's standard chpwd hook.)
-      autoload -U add-zsh-hook
-      load-nvmrc() {
-        local nvmrc_path; nvmrc_path="$(nvm_find_nvmrc)"
-        if [ -n "$nvmrc_path" ]; then
-          local v; v=$(nvm version "$(cat "''${nvmrc_path}")")
-          if [ "$v" = "N/A" ]; then nvm install
-          elif [ "$v" != "$(nvm version)" ]; then nvm use
-          fi
-        elif [ -n "$(PWD=$OLDPWD nvm_find_nvmrc)" ] && [ "$(nvm version)" != "$(nvm version default)" ]; then
-          nvm use default
+        # Auto-select the project's pinned node from .nvmrc on cd (walks up
+        # the tree), and revert to the default when leaving the project.
+        if (( $+functions[nvm] )); then
+          autoload -U add-zsh-hook
+          # Use our own path lookup: nvm_find_nvmrc is an internal helper that
+          # can disappear after nvm changes versions, leaving the chpwd hook
+          # calling a missing command in every new shell.
+          find_project_nvmrc() {
+            local search_dir="$1"
+            while :; do
+              if [ -f "$search_dir/.nvmrc" ]; then
+                printf '%s\n' "$search_dir/.nvmrc"
+                return 0
+              fi
+              [ "$search_dir" = / ] && return 0
+              search_dir="$(dirname "$search_dir")"
+            done
+          }
+          load-nvmrc() {
+            local nvmrc_path; nvmrc_path="$(find_project_nvmrc "$PWD")"
+            if [ -n "$nvmrc_path" ]; then
+              local v; v=$(nvm version "$(cat "''${nvmrc_path}")")
+              if [ "$v" = "N/A" ]; then nvm install
+              elif [ "$v" != "$(nvm version)" ]; then nvm use
+              fi
+            elif [ -n "$OLDPWD" ] && [ -n "$(find_project_nvmrc "$OLDPWD")" ] && [ "$(nvm version)" != "$(nvm version default)" ]; then
+              nvm use default
+            fi
+          }
+          add-zsh-hook chpwd load-nvmrc
+          load-nvmrc
         fi
-      }
-      add-zsh-hook chpwd load-nvmrc
-      load-nvmrc
+      fi
     '';
 
-    # Put Homebrew binaries on PATH for interactive shells.
+    # Homebrew uses /opt/homebrew on Apple Silicon and /usr/local on Intel.
     profileExtra = ''
-      eval "$(/opt/homebrew/bin/brew shellenv)"
+      if [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+      elif [ -x /usr/local/bin/brew ]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+      fi
     '';
   };
 }

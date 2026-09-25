@@ -21,17 +21,22 @@
   outputs =
     inputs@{ nix-darwin, ... }:
     let
-      # Machine-specific settings - edit for the target host.
+      # User and architectures for these profiles. Macs keep their own names.
       username = "ian";
-      hostname = "Ians-MacBook-Pro";       # from `scutil --get LocalHostName`
-      system   = "aarch64-darwin";         # Apple Silicon; "x86_64-darwin" on Intel
+      appleSilicon = "aarch64-darwin";
+      intel = "x86_64-darwin";
+      mkDarwin = system: extraModules: nix-darwin.lib.darwinSystem {
+        inherit system;
+        specialArgs = { inherit inputs username; };
+        modules = [ ./darwin ] ++ extraModules;
+      };
     in
     {
-      # Apply with: darwin-rebuild switch --flake .#${hostname}
-      darwinConfigurations.${hostname} = nix-darwin.lib.darwinSystem {
-        inherit system;
-        specialArgs = { inherit inputs username hostname; };
-        modules = [ ./darwin ];
+      # These keys select a role and CPU, never a Mac's LocalHostName.
+      darwinConfigurations = {
+        default = mkDarwin appleSilicon [ ];
+        intel = mkDarwin intel [ ];
+        homelab = mkDarwin appleSilicon [ ./homelab/darwin.nix ];
       };
     };
 }
