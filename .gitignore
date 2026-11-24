@@ -4,3 +4,22 @@ result-*
 
 # macOS metadata
 .DS_Store
+
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+.cloudflared/
+cloudflared.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local VM and Python artifacts
+*.utm/
+*.img
+*.qcow2
+*.iso
+__pycache__/
+*.pyc

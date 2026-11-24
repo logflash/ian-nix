@@ -21,13 +21,18 @@
   outputs =
     inputs@{ nix-darwin, ... }:
     let
-      # User and architectures for these profiles. Macs keep their own names.
-      username = "ian";
+      # Supplied by configure-darwin.sh so personal account names stay local.
+      username =
+        let value = builtins.getEnv "DARWIN_USERNAME";
+        in if value != "" then value else throw "Set DARWIN_USERNAME or use configure-darwin.sh";
+      namespace =
+        let value = builtins.getEnv "DARWIN_CONFIG_NAMESPACE";
+        in if value != "" then value else throw "Set DARWIN_CONFIG_NAMESPACE or use configure-darwin.sh";
       appleSilicon = "aarch64-darwin";
       intel = "x86_64-darwin";
       mkDarwin = system: extraModules: nix-darwin.lib.darwinSystem {
         inherit system;
-        specialArgs = { inherit inputs username; };
+        specialArgs = { inherit inputs username namespace; };
         modules = [ ./darwin ] ++ extraModules;
       };
     in

@@ -18,6 +18,8 @@
 #   FLAKE_DIR    Directory containing flake.nix (default: this script's directory)
 #   FLAKE_CONFIG darwinConfigurations name to build (default: Apple Silicon or Intel shared profile)
 #   NO_GIT_ADD   Set to 1 to skip auto-staging files for the flake.
+#   DARWIN_USERNAME  macOS account to configure (default: current user).
+#   DARWIN_CONFIG_NAMESPACE  local config namespace (default: checkout directory name).
 #
 set -euo pipefail
 
@@ -111,13 +113,17 @@ main() {
   [ -f "${FLAKE_DIR}/flake.nix" ] || die "no flake.nix found in ${FLAKE_DIR}"
   [ "$(id -u)" -ne 0 ] || die "run this script as your regular user: ./configure-darwin.sh ${ACTION} (it uses sudo for activation)"
   FLAKE_DIR="$(cd -- "$FLAKE_DIR" && pwd)"
+  export DARWIN_USERNAME="${DARWIN_USERNAME:-$(id -un)}"
+  export DARWIN_CONFIG_NAMESPACE="${DARWIN_CONFIG_NAMESPACE:-$(basename "$FLAKE_DIR")}"
+  [[ "$DARWIN_USERNAME" =~ ^[a-zA-Z_][a-zA-Z0-9._-]*$ ]] || die "invalid DARWIN_USERNAME"
+  [[ "$DARWIN_CONFIG_NAMESPACE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || die "invalid DARWIN_CONFIG_NAMESPACE"
 
   load_nix_env
   nix_works || die "Nix is not available; run ./ensure-nix.sh first, then re-run this."
 
   stage_flake_files
 
-  # Use one immutable source for both the user build and root activation.
+      # Use one immutable source for both the user build and root activation.
   # This also lets activation read the flake without access to Downloads.
   local flake_source target system_attr
   flake_source="$(FLAKE_DIR="$FLAKE_DIR" nix eval --impure --raw --expr '(builtins.getFlake (builtins.getEnv "FLAKE_DIR")).outPath')"
@@ -127,26 +133,26 @@ main() {
   case "${ACTION}" in
     check)
       log "Validating flake: ${FLAKE_DIR}"
-      nix flake check "path:${flake_source}"
+      nix flake check --impure "path:${flake_source}"
       ;;
     build)
       log "Building (no activation): darwinConfigurations.${FLAKE_CONFIG}.system"
-      nix build --no-link "$system_attr"
+      nix build --impure --no-link "$system_attr"
       log "Build OK - nothing was activated."
       ;;
     switch)
       log "Building: darwinConfigurations.${FLAKE_CONFIG}.system"
-      nix build --no-link "$system_attr"
+      nix build --impure --no-link "$system_attr"
       warn "Activation needs administrator rights and may prompt for a password."
       sudo -v
       trap restore_conflicting_etc_files EXIT
       backup_conflicting_etc_files
       if command -v darwin-rebuild >/dev/null 2>&1; then
         log "Applying: darwin-rebuild switch --flake ${target}"
-        sudo -H env NIX_CONFIG="$NIX_CONFIG" "$(command -v darwin-rebuild)" switch --flake "$target"
+        sudo -H env NIX_CONFIG="$NIX_CONFIG" DARWIN_USERNAME="$DARWIN_USERNAME" DARWIN_CONFIG_NAMESPACE="$DARWIN_CONFIG_NAMESPACE" "$(command -v darwin-rebuild)" switch --impure --flake "$target"
       else
         log "First run - darwin-rebuild not installed yet; bootstrapping via 'nix run nix-darwin'..."
-        sudo -H env NIX_CONFIG="$NIX_CONFIG" "$(command -v nix)" run nix-darwin/master#darwin-rebuild -- switch --flake "$target"
+        sudo -H env NIX_CONFIG="$NIX_CONFIG" DARWIN_USERNAME="$DARWIN_USERNAME" DARWIN_CONFIG_NAMESPACE="$DARWIN_CONFIG_NAMESPACE" "$(command -v nix)" run nix-darwin/master#darwin-rebuild -- switch --impure --flake "$target"
       fi
       trap - EXIT
       log "Done. Open a new shell (or run 'exec zsh') to pick up the new environment."

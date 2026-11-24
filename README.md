@@ -1,4 +1,4 @@
-# ian-nix
+# macOS Nix configuration
 
 A reproducible macOS configuration built on [Nix](https://nixos.org): a bootstrap
 script to install Nix, plus a [flake](https://nixos.wiki/wiki/Flakes) that
@@ -13,10 +13,10 @@ with [nix-darwin](https://github.com/nix-darwin/nix-darwin),
 | --------------------- | ----------------------------------------------------------------- |
 | `ensure-nix.sh`       | Idempotent bootstrap: install Nix, enable flakes, set git identity. |
 | `configure-darwin.sh` | Apply the flake (`darwin-rebuild switch`); also `build` / `check`. |
-| `configure-homelab.sh` | Apply the shared Mac setup plus UTM and the Ubuntu VM on an Apple Silicon homelab Mac. |
+| `configure-homelab.sh` | Apply the shared Mac setup plus UTM, the Ubuntu VM, and Cloudflare Tunnel on an Apple Silicon homelab Mac. |
 | `flake.nix`           | Entry point: shared Apple Silicon and Intel profiles, plus the homelab profile. |
 | `darwin/`             | System (nix-darwin) modules — `default.nix`, `homebrew.nix`.       |
-| `homelab/`            | UTM cask, VM resources and installer pin, and UTM AppleScript provisioning. |
+| `homelab/`            | UTM and Cloudflare Tunnel setup, VM resources and installer pin, and UTM AppleScript provisioning. |
 | `home/`               | User (home-manager) modules — `default.nix`, `packages.nix`, `shell.nix`, `git.nix`, `mouse.nix`, `vscode.nix`. |
 
 ## What's managed
@@ -45,7 +45,7 @@ mice.
 # 1. Install Nix (idempotent, safe to re-run).
 ./ensure-nix.sh
 
-# 2. Check the username and architecture at the top of flake.nix.
+# 2. The wrapper selects your current macOS account and CPU architecture.
 
 # 3. (Optional) preview without touching the system.
 ./configure-darwin.sh build
@@ -59,6 +59,9 @@ mice.
 then runs `darwin-rebuild switch` against the shared profile for the Mac's CPU
 (`default` on Apple Silicon, `intel` on Intel). The homelab profile adds to the
 same shared modules; it does not replace them.
+The wrapper uses your current macOS username and the checkout directory name
+for local service and config paths. Keep the checkout directory name stable
+after activating the homelab profile.
 The configuration leaves macOS's LocalHostName and ComputerName alone. Override
 the flake configuration key with `FLAKE_CONFIG=…` if needed.
 
@@ -75,15 +78,17 @@ redundant (harmless to leave). Editing files under `darwin/` or `home/` and
 re-running `./configure-darwin.sh` converges the machine to match, on this Mac or
 any other.
 
-## Homelab Mac (servo)
+## Homelab Mac
 
-Run this on servo as your regular user, without `sudo`:
+Run this on the Apple Silicon homelab Mac as your regular user, without `sudo`:
 
 ```sh
 ./configure-homelab.sh build   # optional: build the homelab profile only
 ./configure-homelab.sh         # activate shared Darwin + homelab additions, then create VM
 ./configure-homelab.sh vm      # VM step only, useful after an interrupted activation
 ./configure-homelab.sh finish  # after Ubuntu installation, remove installer drive
+./configure-homelab.sh tunnel      # set up the first route, or check and skip if configured
+./configure-homelab.sh tunnel-add  # explicitly add another hostname/service route
 ```
 
 The script calls `configure-darwin.sh` with `FLAKE_CONFIG=homelab`, so it starts
@@ -94,8 +99,8 @@ Ubuntu, verifies its pinned SHA-256, and uses UTM's AppleScript API to create
 networking, and a display. The verified ISO is moved into the VM's `.utm/Data`
 directory before first boot. UTM owns the mutable VM data in its library.
 Re-running the script checks the existing VM's resources and does not replace
-its disk. Open UTM and start the VM to finish the Ubuntu installer with username
-`ian`. SSH keys are intentionally left for later. After installation, stop the
+its disk. Open UTM and start the VM to finish the Ubuntu installer using your
+macOS account name. SSH keys are intentionally left for later. After installation, stop the
 VM and run `./configure-homelab.sh finish` to remove the installer drive before
 booting the installed system. The installer download is about 3.6 GiB and needs
 several GiB of free space.
@@ -106,6 +111,30 @@ script you run chooses the role. `configure-homelab.sh check` and `build` only
 validate or build the homelab Darwin profile; they do not download the ISO or
 create a VM. The `vm` action checks or creates the VM without rerunning Darwin
 activation; it requires UTM to be installed already.
+
+The first interactive `./configure-homelab.sh` run also offers to set up a
+locally managed Cloudflare Tunnel on the Mac. It prompts for a tunnel name, a
+public hostname, and a local service URL such as `http://localhost:3000`.
+Press Enter at the hostname prompt to defer setup. Cloudflare must already
+manage DNS for the hostname's domain. The script opens Cloudflare login in your
+browser, creates or reuses the named tunnel, validates its ingress rules, and
+adds the DNS route. It never overwrites an existing DNS record. A published
+hostname is publicly reachable unless you protect it with a Cloudflare Access
+policy. If you already created a CNAME to this tunnel, setup keeps it; an A,
+AAAA, or CNAME pointing elsewhere blocks setup so an existing site is not
+redirected. For a separate dashboard, use a name such as `dash.example.com`.
+
+The homelab Nix profile installs `cloudflared` as a launchd system service
+running as your user, so the connector keeps running after logout. The service
+starts automatically after reboot and waits for first-time setup to create its
+config. Tunnel credentials stay under
+`~/.cloudflared/`; the prompted routes and credential-file path stay in
+`~/.config/<repo-directory>/cloudflared.json`. Neither is placed in the Nix store or Git.
+Later runs of `./configure-homelab.sh` and `./configure-homelab.sh tunnel`
+validate and skip an already configured tunnel without prompting or creating another one.
+Run `./configure-homelab.sh tunnel-add` to add another hostname; an existing
+identical route is also skipped. Run `./configure-homelab.sh build` or `check` to validate
+Nix without launching the interactive tunnel setup.
 
 > [!NOTE]
 > The script auto-stages with `git add` (it never commits). When running commands
